@@ -46,25 +46,25 @@ let main argv =
 
     let system = System.create "chatapp" (config.WithFallback <| Akkling.Configuration.defaultConfig())
 
-    let chat =
-        spawn system "chat-1" <| propsPersist(fun mailbox ->
-            let rec loop state =
-                actor {
-                    let! msg = mailbox.Receive()
-                    match msg with
-                    | Event(evt) when mailbox.IsRecovering() ->
-                        printfn "Got event while recovering"
-                        return! loop (evt.Message :: state)
-                    | Event(evt) ->
-                        return! loop (evt.Message :: state)
-                    | Command(cmd) ->
-                        match cmd with
-                        | GetMessages ->
-                            mailbox.Sender() <! state
-                            return! loop state
-                        | Message msg -> return Persist (Event { Message = msg })
-                }
-            loop [])
+    let actor (ctx: Eventsourced<_>) =
+        let rec loop state = actor {
+            let! msg = ctx.Receive()
+            match msg with
+            | Event(evt) when ctx.IsRecovering() ->
+                printfn "Got event while recovering"
+                return! loop (evt.Message :: state)
+            | Event(evt) ->
+                return! loop (evt.Message :: state)
+            | Command(cmd) ->
+                match cmd with
+                | GetMessages ->
+                    ctx.Sender() <! state
+                    return! loop state
+                | Message msg -> return Persist (Event { Message = msg })
+        }
+        loop []
+
+    let chat = spawn system "chat-1" <| propsPersist actor
 
     chat <! Command (Message <| sprintf "New session started %A" System.DateTime.Now)
     async {
