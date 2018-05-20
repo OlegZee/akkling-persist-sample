@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>netcoreapp2.1</TargetFramework>
+    <RootNamespace>akka_persist</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Akka.Persistence.Sqlite" Version="1.3.7" />
+    <PackageReference Include="akkling" Version="0.9.1" />
+    <PackageReference Include="akkling.persistence" Version="0.9.1" />
+  </ItemGroup>
+
+</Project>
