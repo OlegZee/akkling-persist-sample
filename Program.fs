@@ -1,114 +1,21 @@
-﻿open System
-open Akkling
-open Akkling.Persistence
-open Newtonsoft.Json.Linq
+﻿open Newtonsoft.Json
 
-type EventAdapter(__ : Akka.Actor.ExtendedActorSystem) =
-
-    interface Akka.Persistence.Journal.IEventAdapter with
-
-        member __.Manifest(_ : obj) = 
-            let manifestType = typeof<Newtonsoft.Json.Linq.JObject>
-            sprintf "%s,%s" manifestType.FullName <| manifestType.Assembly.GetName().Name
-
-        member __.ToJournal(evt : obj) : obj = 
-            new JObject(
-                new JProperty("evtype", evt.GetType().FullName),
-                new JProperty("value", JObject.FromObject(evt))
-            )
-            :> obj
-
-        member __.FromJournal(evt : obj, _ : string) : Akka.Persistence.Journal.IEventSequence =
-            match evt with
-            | :? JObject as jobj ->
-                match jobj.TryGetValue("evtype") with
-                    | false, _ -> box jobj
-                    | _, typ ->
-                        let t = Type.GetType(typ.ToString())
-                        jobj.["value"].ToObject(t)
-                |> Akka.Persistence.Journal.EventSequence.Single
-
-            | _ ->
-                Akka.Persistence.Journal.EventSequence.Empty
-
-let quot = "\""
-let config = Configuration.parse """akka {  
-    stdout-loglevel = WARNING
-    loglevel = DEBUG
-    persistence.journal {
-        plugin = "akka.persistence.journal.sqlite"
-        sqlite {
-            class = "Akka.Persistence.Sqlite.Journal.SqliteJournal, Akka.Persistence.Sqlite"
-            connection-string = "Data Source=JOURNAL.db;cache=shared;"
-            auto-initialize = on
-            event-adapters {
-              json-adapter = "Program+EventAdapter, akka-persist"
-            }            
-            event-adapter-bindings {
-              # to journal
-              "System.Object, mscorlib" = json-adapter
-              # from journal
-              "Newtonsoft.Json.Linq.JObject, Newtonsoft.Json" = [json-adapter]
-            }
-        }
-    }
-    actor {
-        ask-timeout = 200000
-        debug {
-            # receive = on
-            # autoreceive = on
-            # lifecycle = on
-            # event-stream = on
-            unhandled = on
-        }
-    }
-
-    }"""
-
-type ChatEvent =
-    { Message : string }
-
-type ChatCommand =
-    | Message of string
-    | GetMessages
-
-type ChatMessage =
-    | Command of ChatCommand
-    | Event of ChatEvent
+type ChatEvent = { Message : string }
+type ChatCommand = | Message of string | GetMessages
 
 [<EntryPoint>]
 let main argv =
-    printfn "Persistance test"
 
-    let system = System.create "chatapp" config
+    let settings = new JsonSerializerSettings()
+    settings.TypeNameHandling <- TypeNameHandling.All
 
-    let actor (ctx: Eventsourced<_>) =
-        let rec loop state = actor {
-            let! msg = ctx.Receive()
-            match msg with
-            | Event(evt) when ctx.IsRecovering() ->
-                return! loop (evt.Message :: state)
-            | Event(evt) ->
-                return! loop (evt.Message :: state)
-            | Command(cmd) ->
-                match cmd with
-                | GetMessages ->
-                    ctx.Sender() <! state
-                    return! loop state
-                | Message msg -> return Persist (Event { Message = msg })
-        }
-        loop []
+    let serialized = JsonConvert.SerializeObject({Message = "hhh"}, settings)
+    let deser = JsonConvert.DeserializeObject<_>(serialized, settings)
 
-    let chat = spawn system "chat-1" <| propsPersist actor
+    printfn "%s\n%A\n" serialized deser
 
-    chat <! Command (Message <| sprintf "New session started %A" System.DateTime.Now)
-    async {
-        let! (reply: string list) = chat <? Command GetMessages
-        printfn "Messages:"
-        reply |> List.iter (printfn "  %s")
-    } |> Async.RunSynchronously
+    let serialized = JsonConvert.SerializeObject(Message "Hello world", settings)
+    let deser = JsonConvert.DeserializeObject<_>(serialized, settings)
 
-    printfn "Press enter to quit"
-    ignore <| System.Console.ReadLine()
-
+    printfn "%s\n\n%A" serialized deser
     0
