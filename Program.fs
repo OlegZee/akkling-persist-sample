@@ -1,35 +1,6 @@
 ﻿open System
 open Akkling
 open Akkling.Persistence
-open Newtonsoft.Json.Linq
-
-type EventAdapter(__ : Akka.Actor.ExtendedActorSystem) =
-
-    interface Akka.Persistence.Journal.IEventAdapter with
-
-        member __.Manifest(_ : obj) = 
-            let manifestType = typeof<Newtonsoft.Json.Linq.JObject>
-            sprintf "%s,%s" manifestType.FullName <| manifestType.Assembly.GetName().Name
-
-        member __.ToJournal(evt : obj) : obj = 
-            new JObject(
-                new JProperty("evtype", evt.GetType().FullName),
-                new JProperty("value", JObject.FromObject(evt))
-            )
-            :> obj
-
-        member __.FromJournal(evt : obj, _ : string) : Akka.Persistence.Journal.IEventSequence =
-            match evt with
-            | :? JObject as jobj ->
-                match jobj.TryGetValue("evtype") with
-                    | false, _ -> box jobj
-                    | _, typ ->
-                        let t = Type.GetType(typ.ToString())
-                        jobj.["value"].ToObject(t)
-                |> Akka.Persistence.Journal.EventSequence.Single
-
-            | _ ->
-                Akka.Persistence.Journal.EventSequence.Empty
 
 let quot = "\""
 let config = Configuration.parse """akka {  
@@ -41,15 +12,6 @@ let config = Configuration.parse """akka {
             class = "Akka.Persistence.Sqlite.Journal.SqliteJournal, Akka.Persistence.Sqlite"
             connection-string = "Data Source=JOURNAL.db;cache=shared;"
             auto-initialize = on
-            event-adapters {
-              json-adapter = "Program+EventAdapter, akka-persist"
-            }            
-            event-adapter-bindings {
-              # to journal
-              "System.Object, mscorlib" = json-adapter
-              # from journal
-              "Newtonsoft.Json.Linq.JObject, Newtonsoft.Json" = [json-adapter]
-            }
         }
     }
     actor {
@@ -76,6 +38,10 @@ type ChatMessage =
     | Command of ChatCommand
     | Event of ChatEvent
 
+type Message = {
+    message: ChatMessage
+}
+
 [<EntryPoint>]
 let main argv =
     printfn "Persistance test"
@@ -84,7 +50,7 @@ let main argv =
 
     let actor (ctx: Eventsourced<_>) =
         let rec loop state = actor {
-            let! msg = ctx.Receive()
+            let! {message = msg} = ctx.Receive()
             match msg with
             | Event(evt) when ctx.IsRecovering() ->
                 return! loop (evt.Message :: state)
@@ -95,15 +61,15 @@ let main argv =
                 | GetMessages ->
                     ctx.Sender() <! state
                     return! loop state
-                | Message msg -> return Persist (Event { Message = msg })
+                | Message msg -> return Persist ({message = Event { Message = msg }})
         }
         loop []
 
     let chat = spawn system "chat-1" <| propsPersist actor
 
-    chat <! Command (Message <| sprintf "New session started %A" System.DateTime.Now)
+    chat <! { message = Command (Message <| sprintf "New session started %A" System.DateTime.Now) }
     async {
-        let! (reply: string list) = chat <? Command GetMessages
+        let! (reply: string list) = chat <? { message = Command GetMessages }
         printfn "Messages:"
         reply |> List.iter (printfn "  %s")
     } |> Async.RunSynchronously
