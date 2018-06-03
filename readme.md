@@ -13,7 +13,7 @@ Also Akka Persistance provides configurable "event adapters" so that inner messa
 
 Akka Persistance utilizes Newtonsoft's `TypeNameHandling` setting to persist the type of the object so that proper class is chosen for deserialization. Unfortunately this serializer contains a bug which prevents deserialization of F#'s discriminated unions.
 
-The following sample demonstrates an issue:
+The following snippet demonstrates the issue:
 
 ```fsharp
 open Newtonsoft.Json
@@ -56,4 +56,4 @@ The message type is wrapped to record type. See fix/record-type branch in this r
 
 ## Kudos
 
-Thank you @object for providing a hint and a sample code. That was the only and the great source of the information about Akka.NET persistance.
+Thanks go to Vagif Abilov (@object) for his invaluable advising and a sample code.
