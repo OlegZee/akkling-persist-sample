@@ -2,6 +2,8 @@
 open Akkling
 open Akkling.Persistence
 open Newtonsoft.Json.Linq
+open Newtonsoft.Json
+open System.IO
 
 type EventAdapter(__ : Akka.Actor.ExtendedActorSystem) =
 
@@ -14,7 +16,7 @@ type EventAdapter(__ : Akka.Actor.ExtendedActorSystem) =
         member __.ToJournal(evt : obj) : obj = 
             new JObject(
                 new JProperty("evtype", evt.GetType().FullName),
-                new JProperty("value", JObject.FromObject(evt))
+                new JProperty("value", JsonConvert.SerializeObject(evt))
             )
             :> obj
 
@@ -25,7 +27,8 @@ type EventAdapter(__ : Akka.Actor.ExtendedActorSystem) =
                     | false, _ -> box jobj
                     | _, typ ->
                         let t = Type.GetType(typ.ToString())
-                        jobj.["value"].ToObject(t)
+                        let value = jobj.["value"].ToString()
+                        JsonConvert.DeserializeObject(value, t)
                 |> Akka.Persistence.Journal.EventSequence.Single
 
             | _ ->
@@ -65,8 +68,11 @@ let config = Configuration.parse """akka {
 
     }"""
 
+type ChannelId = ChannelId of int
+type UserId = UserId of string
+
 type ChatEvent =
-    { Message : string }
+    { Message : string; User: UserId }
 
 type ChatCommand =
     | Message of string
@@ -74,7 +80,7 @@ type ChatCommand =
 
 type ChatMessage =
     | Command of ChatCommand
-    | Event of ChatEvent
+    | Event of ChatEvent * ChannelId
 
 [<EntryPoint>]
 let main argv =
@@ -86,16 +92,16 @@ let main argv =
         let rec loop state = actor {
             let! msg = ctx.Receive()
             match msg with
-            | Event(evt) when ctx.IsRecovering() ->
-                return! loop (evt.Message :: state)
-            | Event(evt) ->
+            // | Event(evt) when ctx.IsRecovering() ->
+            //     return! loop (evt.Message :: state)
+            | Event (evt, chan) ->
                 return! loop (evt.Message :: state)
             | Command(cmd) ->
                 match cmd with
                 | GetMessages ->
                     ctx.Sender() <! state
                     return! loop state
-                | Message msg -> return Persist (Event { Message = msg })
+                | Message msg -> return Persist (Event ({ Message = msg; User = UserId "101" }, ChannelId 102))
         }
         loop []
 
